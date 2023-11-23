@@ -22,6 +22,8 @@ contract AirdropFactory is Ownable {
     // True - paused; False - not paused;
     bool public pauseCreation;
 
+    mapping(address => bool) public alreadyClaimed;
+
     // Events
     event CreateAirdropSmartContract(address indexed _owner, address indexed _newSc);
 
@@ -29,7 +31,7 @@ contract AirdropFactory is Ownable {
     function createAirdropSmartContract(IERC20 _tokenToAidrop, bytes32 _merkleRoot) external {
         require(pauseCreation == false, "Can't perform this action right now!");
 
-        NethermindAirdrop _newAidropSc = new NethermindAirdrop(_tokenToAidrop, msg.sender, _merkleRoot);
+        ScAirdrop _newAidropSc = new ScAirdrop(_tokenToAidrop, msg.sender, _merkleRoot);
 
         aidropSC.push(address(_newAidropSc));
 
@@ -38,11 +40,7 @@ contract AirdropFactory is Ownable {
 
     // Toggle function for "isPaused" variable
     function togglePause() external onlyOwner {
-        if(pauseCreation == true) {
-            pauseCreation = false;
-        } else {
-            pauseCreation = true;
-        }
+        pauseCreation = !pauseCreation;
     }
 }
 
@@ -89,15 +87,12 @@ contract Airdrop is Ownable, ReentrancyGuard {
 
     // Toggle function for "isPaused" variable
     function togglePaused() external onlyOwner {
-        if(isPaused == true) {
-            isPaused = false;
-        } else {
-            isPaused == true;
-        }
+        isPaused = !isPaused;
     }
 
     // Claim ERC20 tokens
     function claimTokens(uint256 _amount, address _to, bytes32[] calldata _merkleProof) external callerIsUser nonReentrant {
+        require(alreadyClaimed[_to] == false, "This address has already claimed tokens!");
         require(isPaused == false, "Can't perfrom actions while the smart contract is paused!");
         require(_amount <= tokenToAirdrop.balanceOf(address(this)), "Not enough tokens for this action!");
 
@@ -107,11 +102,14 @@ contract Airdrop is Ownable, ReentrancyGuard {
         require(isValidProof, "Invalid Merkle proof!");
         require(tokenToAirdrop.transfer(_to, _amount), "Failing to transfer ERC20 tokens!");
 
+        alreadyClaimed[_to] = true;
+
         emit ClaimTokens(msg.sender, _to, _amount);
     }
 
      // Claim Ether
     function claimEther(uint256 _amount, address _to, bytes32[] calldata _merkleProof) external callerIsUser nonReentrant {
+        require(alreadyClaimed[_to] == false, "This address has already claimed tokens!");
         require(isPaused == false, "Can't perfrom actions while the smart contract is paused!");
         require(_amount <= address(this).balance, "Not enough tokens for this action!");
 
@@ -119,6 +117,8 @@ contract Airdrop is Ownable, ReentrancyGuard {
         bool isValidProof = MerkleProof.verifyCalldata(_merkleProof, merkleRoot, _node);
 
         require(isValidProof, "Invalid Merkle proof!");
+
+        alreadyClaimed[_to] = true;
 
         (bool sent, ) = _to.call{value: _amount}("");
         require(sent, "Transaction failed!");
